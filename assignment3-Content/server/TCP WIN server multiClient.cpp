@@ -1,33 +1,32 @@
 #include <iostream>
 #include "client.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <cstring>
+#include <cerrno>
 using namespace std;
-
-// Link the Winsock library
-#pragma comment(lib, "ws2_32.lib")
 
 int main()
 {
-    // Startup
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
-    {
-        cout << "ERROR: Failed to start WSA" << std::endl;
-        return 0;
-    }
-
-    cout << "SUCCESS: Started WSA" << std::endl;
-
     // Socket
-    SOCKET ServerSocket;
+    int ServerSocket;
     ServerSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (ServerSocket == INVALID_SOCKET)
+    if (ServerSocket < 0)
     {
-        cout << "ERROR: Failed to create ServerSocket" << std::endl;
-        WSACleanup(); // Clean up Winsock if socket creation fails
+        cout << "ERROR: Failed to create ServerSocket: " << strerror(errno) << std::endl;
         return 0;
     }
 
     cout << "SUCCESS: Started ServerSocket" << std::endl;
+
+    // Set socket options to allow reuse of address
+    int opt = 1;
+    if (setsockopt(ServerSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    {
+        cout << "ERROR: Failed to set socket options" << std::endl;
+    }
 
     // Bind
     sockaddr_in SvrAddr;
@@ -35,22 +34,21 @@ int main()
     SvrAddr.sin_family = AF_INET;
     SvrAddr.sin_addr.s_addr = INADDR_ANY;
     SvrAddr.sin_port = htons(port);
-    if (bind(ServerSocket, (struct sockaddr *)&SvrAddr, sizeof(SvrAddr)) == SOCKET_ERROR)
+    memset(SvrAddr.sin_zero, 0, sizeof(SvrAddr.sin_zero));
+    if (bind(ServerSocket, (struct sockaddr *)&SvrAddr, sizeof(SvrAddr)) < 0)
     {
-        closesocket(ServerSocket); // Close the socket on error
-        WSACleanup();              // Clean up Winsock
-        cout << "ERROR: Failed to bind ServerSocket" << std::endl;
+        close(ServerSocket); // Close the socket on error
+        cout << "ERROR: Failed to bind ServerSocket: " << strerror(errno) << std::endl;
         return 0;
     }
 
     cout << "SUCCESS: Binded ServerSocket to port " << port << std::endl;
 
     // Listen
-    if (listen(ServerSocket, 1) == SOCKET_ERROR)
+    if (listen(ServerSocket, 5) < 0)
     {
-        closesocket(ServerSocket); // Close the socket on error
-        WSACleanup();              // Clean up Winsock
-        cout << "ERROR: Listen failed to configure ServerSocket" << std::endl;
+        close(ServerSocket); // Close the socket on error
+        cout << "ERROR: Listen failed to configure ServerSocket: " << strerror(errno) << std::endl;
         return 0;
     }
 
@@ -61,13 +59,12 @@ int main()
     {
 
         // Accept
-        SOCKET ConnectionSocket;
+        int ConnectionSocket;
         ConnectionSocket = accept(ServerSocket, NULL, NULL);
-        if (ConnectionSocket == SOCKET_ERROR)
+        if (ConnectionSocket < 0)
         {
-            closesocket(ServerSocket); // Close the server socket on error
-            WSACleanup();              // Clean up Winsock
-            cout << "ERROR: Failed to accept connection" << std::endl;
+            close(ServerSocket); // Close the server socket on error
+            cout << "ERROR: Failed to accept connection: " << strerror(errno) << std::endl;
             return 0;
         }
         clientIDTicker++;
@@ -79,8 +76,7 @@ int main()
     // Cleanup
     // tell all threads to shut down on next pass
     serverShutdown = true;
-    closesocket(ServerSocket);
-    WSACleanup();
+    close(ServerSocket);
 
     return 0;
 }

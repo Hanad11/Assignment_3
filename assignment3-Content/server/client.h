@@ -1,4 +1,9 @@
-#include <winsock2.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <cstring>
+#include <cerrno>
 #include <thread>
 #include "fileSaving.h"
 #include "../commands.h"
@@ -6,7 +11,7 @@
 // 0 == success
 // 1 == client disconnected incorrectly
 // 2 == unable to send to client
-int clientHandler(bool* abortAllConnections, SOCKET ConnectionSocket, int clientID)
+int clientHandler(bool* abortAllConnections, int ConnectionSocket, int clientID)
 {
     std::cout << "SUCCESS: Accepted connection to client: " << clientID << std::endl;
     std::cout << "Running on thread: " << std::this_thread::get_id() << std::endl;
@@ -107,10 +112,10 @@ int clientHandler(bool* abortAllConnections, SOCKET ConnectionSocket, int client
                 {
                     const char *c_packet = packet.c_str();
                     int sendResult = send(ConnectionSocket, c_packet, strlen(c_packet), 0);
-                    if (sendResult == SOCKET_ERROR)
+                    if (sendResult < 0)
                     {
-                        std::cout << "ERROR: Failed to send data to client " << clientID << std::endl;
-                        closesocket(ConnectionSocket);
+                        std::cout << "ERROR: Failed to send data to client " << clientID << ": " << strerror(errno) << std::endl;
+                        close(ConnectionSocket);
                         return 2;
                     }
                     std::cout << "SUCCESS: Packet sent to client " << clientID << std::endl;
@@ -125,10 +130,10 @@ int clientHandler(bool* abortAllConnections, SOCKET ConnectionSocket, int client
             std::string result = "\nFIN: message received" + status;
             const char *c_result = result.c_str();
             int sendResult = send(ConnectionSocket, c_result, strlen(c_result), 0);
-            if (sendResult == SOCKET_ERROR)
+            if (sendResult < 0)
             {
-                std::cout << "ERROR: Failed to send data to client " << clientID << std::endl;
-                closesocket(ConnectionSocket);
+                std::cout << "ERROR: Failed to send data to client " << clientID << ": " << strerror(errno) << std::endl;
+                close(ConnectionSocket);
                 return 2;
             }
             std::cout << "SUCCESS: Sent data to client " << clientID << std::endl;
@@ -137,14 +142,14 @@ int clientHandler(bool* abortAllConnections, SOCKET ConnectionSocket, int client
         {
             // Graceful disconnect
             std::cout << "Client " << clientID << " disconnected gracefully." << std::endl;
-            closesocket(ConnectionSocket);
+            close(ConnectionSocket);
             return 0;
         }
         else
-        { // bytesReceived == SOCKET_ERROR
-            int err = WSAGetLastError();
-            closesocket(ConnectionSocket);
-            if (err == WSAECONNABORTED)
+        { // bytesReceived < 0
+            int err = errno;
+            close(ConnectionSocket);
+            if (err == ECONNABORTED || err == ECONNRESET)
             {
                 // Client forcibly closed the connection
                 std::cout << "Client " << clientID << " disconnected forcibly." << std::endl;
@@ -152,7 +157,7 @@ int clientHandler(bool* abortAllConnections, SOCKET ConnectionSocket, int client
             }
             else
             {
-                std::cout << "recv failed with error: " << err << std::endl;
+                std::cout << "recv failed with error: " << strerror(err) << std::endl;
                 std::cout << "Issue likely stems from client " << clientID << " disconnecting incorrectly" << std::endl;
                 return 1;
             }
