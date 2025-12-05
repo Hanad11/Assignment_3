@@ -1,24 +1,30 @@
 #include "clientNetwork.h"
 #include <iostream>
 
-ClientNetwork::ClientNetwork() : clientSocket(-1), connected(false) {}
+ClientNetwork::ClientNetwork() : clientSocket(INVALID_SOCKET), connected(false) {}
 
 // distructor to clean up socket and Winsock
 ClientNetwork::~ClientNetwork() {
     disconnect();
 }
 
-// Initialize network (no-op on Linux, kept for compatibility)
+// Initialize Winsock
 bool ClientNetwork::initialize() {
-    std::cout << "SUCCESS: Network initialized" << std::endl;
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cout << "ERROR: Failed to start WSA" << std::endl;
+        return false;
+    }
+    std::cout << "SUCCESS: Started WSA" << std::endl;
     return true;
 }
 
 bool ClientNetwork::connectToServer(const char* ip, int port) {
     // Create socket
     clientSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (clientSocket < 0) {
-        std::cout << "ERROR: Failed to create ClientSocket: " << strerror(errno) << std::endl;
+    if (clientSocket == INVALID_SOCKET) {
+        std::cout << "ERROR: Failed to create ClientSocket" << std::endl;
+        WSACleanup();
         return false;
     }
     std::cout << "SUCCESS: Created ClientSocket" << std::endl;
@@ -28,12 +34,12 @@ bool ClientNetwork::connectToServer(const char* ip, int port) {
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(port);
     serverAddr.sin_addr.s_addr = inet_addr(ip);
-    memset(serverAddr.sin_zero, 0, sizeof(serverAddr.sin_zero));
     
     // Connect
-    if (connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-        std::cout << "ERROR: Connection attempt failed to " << ip << ":" << port << ": " << strerror(errno) << std::endl;
-        close(clientSocket);
+    if (connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cout << "ERROR: Connection attempt failed to " << ip << ":" << port << std::endl;
+        closesocket(clientSocket);
+        WSACleanup();
         return false;
     }
     
@@ -51,8 +57,8 @@ bool ClientNetwork::sendCommand(const std::string& command) {
     const char* cCommand = command.c_str();
     int sendResult = send(clientSocket, cCommand, strlen(cCommand), 0);
     
-    if (sendResult < 0) {
-        std::cout << "ERROR: Failed to send data: " << strerror(errno) << std::endl;
+    if (sendResult == SOCKET_ERROR) {
+        std::cout << "ERROR: Failed to send data" << std::endl;
         return false;
     }
     
@@ -68,8 +74,8 @@ std::string ClientNetwork::receiveResponse() {
     char recvBuffer[1024];
     int bytesReceived = recv(clientSocket, recvBuffer, sizeof(recvBuffer) - 1, 0);
     
-    if (bytesReceived < 0 || bytesReceived == 0) {
-        std::cout << "ERROR: Failed to receive data or connection closed: " << strerror(errno) << std::endl;
+    if (bytesReceived == SOCKET_ERROR || bytesReceived == 0) {
+        std::cout << "ERROR: Failed to receive data or connection closed" << std::endl;
         return "";
     }
     
@@ -86,8 +92,8 @@ std::list<std::string> ClientNetwork::receiveAllPosts() {
     while (true) {
         int bytesReceived = recv(clientSocket, recvBuffer, sizeof(recvBuffer) - 1, 0);
         
-        if (bytesReceived < 0 || bytesReceived == 0) {
-            std::cout << "ERROR: Connection closed while receiving posts: " << strerror(errno) << std::endl;
+        if (bytesReceived == SOCKET_ERROR || bytesReceived == 0) {
+            std::cout << "ERROR: Connection closed while receiving posts" << std::endl;
             break;
         }
         
@@ -127,7 +133,8 @@ std::list<std::string> ClientNetwork::receiveAllPosts() {
 
 void ClientNetwork::disconnect() {
     if (connected) {
-        close(clientSocket);
+        closesocket(clientSocket);
+        WSACleanup();
         connected = false;
         std::cout << "SUCCESS: Disconnected from server" << std::endl;
     }

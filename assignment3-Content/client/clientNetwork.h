@@ -1,18 +1,16 @@
 #ifndef CLIENT_NETWORK_H
 #define CLIENT_NETWORK_H
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <cstring>
-#include <cerrno>
+#include <winsock2.h>
 #include <string>
 #include <list>
 
+// Link the Winsock library
+#pragma comment(lib, "ws2_32.lib")
+
 class ClientNetwork {
 private:
-    int clientSocket;
+    SOCKET clientSocket;
     bool connected;
     const int BUFFER_SIZE = 1024;
 
